@@ -1,4 +1,4 @@
-package me.msri.annotation.buildtool.gradle;
+package me.msri.buildtool.gradle;
 
 import java.io.File;
 import java.io.IOException;
@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import lombok.experimental.UtilityClass;
-import me.msri.annotation.buildtool.exception.BuildToolRunnerException;
+import me.msri.buildtool.exception.BuildToolRunnerException;
 
 @UtilityClass
 public class GradleRunnerUtil {
@@ -29,6 +29,7 @@ public class GradleRunnerUtil {
           nameLine
               .filter(line -> line.contains("rootProject.name"))
               .map(line -> line.split("=")[1].strip())
+              .map(String::toLowerCase)
               .findFirst()
               .orElse("");
       projects.put(projectName, "");
@@ -46,6 +47,7 @@ public class GradleRunnerUtil {
                 return null;
               })
           .filter(Objects::nonNull)
+          .map(String::toLowerCase)
           .forEach(
               name -> {
                 if (name.contains(":")) {
@@ -59,7 +61,6 @@ public class GradleRunnerUtil {
     } catch (IOException e) {
       throw new BuildToolRunnerException(e);
     }
-    System.out.println(projects);
     return projects;
   }
 

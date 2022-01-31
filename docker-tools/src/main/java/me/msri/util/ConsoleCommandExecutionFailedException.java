@@ -1,4 +1,4 @@
-package me.msri.annotation.util;
+package me.msri.util;
 
 import lombok.extern.slf4j.Slf4j;
 

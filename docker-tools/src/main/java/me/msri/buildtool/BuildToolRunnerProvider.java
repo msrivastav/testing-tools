@@ -1,15 +1,15 @@
-package me.msri.annotation.buildtool;
+package me.msri.buildtool;
 
 import java.util.stream.Collectors;
 
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
-import me.msri.annotation.buildtool.exception.UnresolvedBuildToolException;
-import me.msri.annotation.buildtool.gradle.GradleRunner;
-import me.msri.annotation.buildtool.gradle.GradleWrapperRunner;
-import me.msri.annotation.buildtool.maven.MavenRunner;
-import me.msri.annotation.buildtool.maven.MavenWrapperRunner;
-import me.msri.annotation.util.ConsoleCommandExecutor;
+import me.msri.buildtool.exception.UnresolvedBuildToolException;
+import me.msri.buildtool.gradle.GradleRunner;
+import me.msri.buildtool.gradle.GradleWrapperRunner;
+import me.msri.buildtool.maven.MavenRunner;
+import me.msri.buildtool.maven.MavenWrapperRunner;
+import me.msri.util.ConsoleCommandExecutor;
 
 @Slf4j
 @UtilityClass

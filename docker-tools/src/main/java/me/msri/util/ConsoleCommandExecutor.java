@@ -1,4 +1,4 @@
-package me.msri.annotation.util;
+package me.msri.util;
 
 import java.util.Arrays;
 import java.util.Scanner;

@@ -1,9 +1,10 @@
-package me.msri.annotation.buildtool.gradle;
+package me.msri.buildtool.gradle;
 
+import java.util.Locale;
 import java.util.Map;
 
 import lombok.extern.slf4j.Slf4j;
-import me.msri.annotation.buildtool.BuildToolRunner;
+import me.msri.buildtool.BuildToolRunner;
 
 @Slf4j
 public class GradleWrapperRunner implements BuildToolRunner {
@@ -15,10 +16,8 @@ public class GradleWrapperRunner implements BuildToolRunner {
 
   private static final Map<String, String> PROJECT_NAMES = GradleRunnerUtil.getProjectNames(GRADLE_WRAPPER_COMMAND);
 
-
-
-  private boolean isCommandExecutable(final String projectName) {
-    final String command = FULL_GRADLE_COMMAND + "| grep " + projectName;
-    return false;
-  }
+    @Override
+    public boolean isValidService(String serviceName) {
+        return PROJECT_NAMES.containsKey(serviceName.toLowerCase());
+    }
 }
