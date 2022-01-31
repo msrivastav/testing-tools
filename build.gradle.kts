@@ -1,8 +1,17 @@
 plugins {
+    base
     java
 }
 
-group = "me.msri"
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+allprojects {
+    group = "me.msri"
+}
+
 version = "1.0-SNAPSHOT"
 
 repositories {
