@@ -1,14 +1,12 @@
 package me.msri.annotation.processor;
 
-import com.github.dockerjava.api.model.Image;
-import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientBuilder;
 import com.sun.source.util.Trees;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -27,8 +25,9 @@ import me.msri.annotation.BuildImage;
 import me.msri.annotation.BuildMultipleImages;
 import me.msri.buildtool.BuildToolRunner;
 import me.msri.buildtool.BuildToolRunnerProvider;
+import me.msri.docker.DockerClientProvider;
+import me.msri.docker.DockerRunner;
 
-import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toUnmodifiableSet;
@@ -38,30 +37,11 @@ import static java.util.stream.Collectors.toUnmodifiableSet;
 public class BuildImageProcessor extends AbstractProcessor {
 
   private static final String PROJECT_ROOT = System.getProperty("user.dir");
-  private static final BuildToolRunner BUILD_TOOL_RUNNER =
-      BuildToolRunnerProvider.getBuildToolRunner();
-  private static final Map<String, Set<String>> DOCKER_IMAGES = getAllDockerImageWithTags();
+  private BuildToolRunner buildToolRunner;
+  private DockerRunner dockerRunner;
+  private Map<String, Set<String>> dockerImages;
 
   private Trees trees;
-
-  private static Map<String, Set<String>> getAllDockerImageWithTags() {
-    final long start = System.currentTimeMillis();
-    final var defaultDockerConfig = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
-    final var images =
-        DockerClientBuilder.getInstance(defaultDockerConfig).build().listImagesCmd().exec().stream()
-            .map(Image::getRepoTags)
-            .flatMap(Arrays::stream)
-            .map(tag -> tag.split(":"))
-            .collect(
-                groupingBy(
-                    imageAndTag -> imageAndTag[0],
-                    collectingAndThen(
-                        toUnmodifiableSet(),
-                        imageAndTag ->
-                            imageAndTag.stream().map(it -> it[1]).collect(toUnmodifiableSet()))));
-    log.info("Total time to get list of image names: {}", (System.currentTimeMillis() - start));
-    return images;
-  }
 
   @Override
   public SourceVersion getSupportedSourceVersion() {
@@ -72,6 +52,9 @@ public class BuildImageProcessor extends AbstractProcessor {
   public synchronized void init(ProcessingEnvironment processingEnv) {
     super.init(processingEnv);
     trees = Trees.instance(processingEnv);
+      buildToolRunner = BuildToolRunnerProvider.getBuildToolRunner(PROJECT_ROOT);
+      dockerRunner = new DockerRunner(DockerClientProvider.newInstance());
+      dockerImages = dockerRunner.getAllDockerImageWithTags();
   }
   // 1. It is gradle project or maven
   // 2. List services managed by gradle
@@ -92,7 +75,7 @@ public class BuildImageProcessor extends AbstractProcessor {
             .flatMap(this::createTagEntryPerService)
             .filter(
                 imageWithTag -> {
-                  if (BUILD_TOOL_RUNNER.isValidService(imageWithTag.serviceName())) {
+                  if (buildToolRunner.isValidService(imageWithTag.serviceName())) {
                     return true;
                   }
                   log.error("Invalid service name: {}", imageWithTag.serviceName());
@@ -112,8 +95,12 @@ public class BuildImageProcessor extends AbstractProcessor {
       log.info("Creating project jars ...");
       //runGradleCommandAndWait("jar");
       log.info("Creating images ...");
-      imagesWithTagsToBeCreated.stream().forEach(System.out::println);
+      imagesWithTagsToBeCreated.parallelStream().map(Map.Entry::getKey).map(buildToolRunner::createSpringBootImage).filter(
+          Optional::isPresent).forEach(System.out::println);
     }
+    System.out.println("<<>>");
+    //buildToolRunner.createSpringBootImage("boot-app").ifPresent(System.out::println);
+      System.out.println("<<>>");
     log.info("Total time to setup images: {}ms", System.currentTimeMillis() - startTime);
     roundEnv.getElementsAnnotatedWith(BuildImage.class).stream()
         .filter(TypeElement.class::isInstance)
@@ -168,7 +155,7 @@ public class BuildImageProcessor extends AbstractProcessor {
       return Map.entry(serviceName, tagsToBeCreated);
     }
 
-    final var tagsOfExistingImage = DOCKER_IMAGES.getOrDefault(serviceName, Collections.emptySet());
+    final var tagsOfExistingImage = dockerImages.getOrDefault(serviceName, Collections.emptySet());
     log.info("Found existing tags for image {}: {}", serviceName, tagsOfExistingImage);
 
     tagsAndRestriction.keySet().stream()

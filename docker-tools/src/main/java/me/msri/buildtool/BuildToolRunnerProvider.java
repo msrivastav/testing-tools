@@ -6,7 +6,6 @@ import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 import me.msri.buildtool.exception.UnresolvedBuildToolException;
 import me.msri.buildtool.gradle.GradleRunner;
-import me.msri.buildtool.gradle.GradleWrapperRunner;
 import me.msri.buildtool.maven.MavenRunner;
 import me.msri.buildtool.maven.MavenWrapperRunner;
 import me.msri.util.ConsoleCommandExecutor;
@@ -15,11 +14,9 @@ import me.msri.util.ConsoleCommandExecutor;
 @UtilityClass
 public class BuildToolRunnerProvider {
 
-  private static final String PROJECT_ROOT = System.getProperty("user.dir");
+  public static BuildToolRunner getBuildToolRunner(final String projectBasePath) {
 
-  public static BuildToolRunner getBuildToolRunner() {
-
-    final String command = "ls " + PROJECT_ROOT;
+    final String command = "ls " + projectBasePath;
 
     var result = ConsoleCommandExecutor.runCommandAndWait(command);
     final var errorResult = result.errorResult();
@@ -29,12 +26,8 @@ public class BuildToolRunnerProvider {
 
     final String successResult = result.getSuccessResultStream().collect(Collectors.joining(" "));
 
-    if (successResult.contains("gradlew")) {
-      return new GradleWrapperRunner();
-    }
-
-    if (successResult.contains("build.gradle")) {
-      return new GradleRunner();
+    if (successResult.contains("gradlew") || successResult.contains("build.gradle")) {
+      return new GradleRunner(projectBasePath);
     }
 
     if (successResult.contains("mvnw")) {

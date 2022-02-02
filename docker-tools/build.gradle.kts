@@ -7,6 +7,10 @@ version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+    maven {
+        isAllowInsecureProtocol = true
+        setUrl("http://repo.gradle.org/gradle/libs-releases-local")
+    }
 }
 
 dependencies {
@@ -15,6 +19,9 @@ dependencies {
 
     compileOnly("org.projectlombok:lombok:1.18.22")
     annotationProcessor("org.projectlombok:lombok:1.18.22")
+    implementation("org.gradle:gradle-tooling-api:7.3-20210825160000+0000")
+    implementation("org.slf4j:slf4j-api:1.7.35")
+
 
     testCompileOnly("org.projectlombok:lombok:1.18.22")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.2")
