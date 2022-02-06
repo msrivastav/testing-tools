@@ -8,7 +8,7 @@ import me.msri.buildtool.exception.UnresolvedBuildToolException;
 import me.msri.buildtool.gradle.GradleRunner;
 import me.msri.buildtool.maven.MavenRunner;
 import me.msri.buildtool.maven.MavenWrapperRunner;
-import me.msri.util.ConsoleCommandExecutor;
+import me.msri.console.ConsoleCommandExecutor;
 
 @Slf4j
 @UtilityClass

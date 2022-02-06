@@ -1,4 +1,4 @@
-package me.msri.util;
+package me.msri.console;
 
 import java.util.Arrays;
 import java.util.Scanner;

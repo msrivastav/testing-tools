@@ -1,17 +1,15 @@
 package me.msri.buildtool.gradle;
 
+import java.io.ByteArrayOutputStream;
+import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.experimental.UtilityClass;
+import lombok.extern.slf4j.Slf4j;
+import me.msri.buildtool.exception.BuildToolRunnerException;
 import org.gradle.tooling.GradleConnectionException;
 import org.gradle.tooling.ResultHandler;
 import org.gradle.tooling.model.GradleProject;
 import org.gradle.tooling.model.Task;
-
-import java.io.ByteArrayOutputStream;
-import java.util.Map;
-import java.util.stream.Collectors;
-
-import lombok.experimental.UtilityClass;
-import lombok.extern.slf4j.Slf4j;
-import me.msri.buildtool.exception.BuildToolRunnerException;
 
 @UtilityClass
 @Slf4j
@@ -25,7 +23,6 @@ public class GradleRunnerUtil {
     final var errorStream = new ByteArrayOutputStream();
 
     try (final var projConn = gradleClientProvider.getConnectionForProject(fullProjectPath)) {
-        final var projectName = projConn.getModel(GradleProject.class).getName();
 
       projConn
           .newBuild()
@@ -36,12 +33,12 @@ public class GradleRunnerUtil {
               new ResultHandler<>() {
                 @Override
                 public void onComplete(Void result) {
-                  log.info("Project: {}. Task: {} execution complete.", projectName, task);
+                  log.info("Task: {} execution complete.", task);
                 }
 
                 @Override
                 public void onFailure(GradleConnectionException failure) {
-                  log.error("Project: {}, Task: {} execution failed.", projectName, task);
+                  log.error("Task: {} execution failed.", task);
                   throw new BuildToolRunnerException(failure);
                 }
               });
