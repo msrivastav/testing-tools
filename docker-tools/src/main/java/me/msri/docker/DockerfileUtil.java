@@ -41,6 +41,7 @@ public class DockerfileUtil {
     }
 
     try {
+      // creates a temp file at same location where spring boot fat jar is created
       final var dockerfile = Files.createTempFile(Path.of(jarFilePath), "Dockerfile", "").toFile();
       dockerfile.deleteOnExit();
 

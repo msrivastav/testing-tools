@@ -14,6 +14,4 @@ public @interface BuildImage {
     String[] services();
 
     String tag();
-
-    boolean enforce() default false;
 }

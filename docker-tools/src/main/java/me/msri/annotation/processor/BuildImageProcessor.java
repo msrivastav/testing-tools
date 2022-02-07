@@ -1,13 +1,12 @@
 package me.msri.annotation.processor;
 
 import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toMap;
+import static java.util.stream.Collectors.mapping;
+import static java.util.stream.Collectors.toUnmodifiableSet;
 
 import com.sun.source.util.Trees;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -39,7 +38,7 @@ public class BuildImageProcessor extends AbstractProcessor {
   private static final String PROJECT_ROOT = System.getProperty("user.dir");
   private BuildToolRunner buildToolRunner;
   private DockerRunner dockerRunner;
-  private Map<String, Map.Entry<String, Set<String>>> dockerImages;
+  private Map<String, Map<String, Set<String>>> dockerImages;
 
   private Trees trees;
 
@@ -78,86 +77,31 @@ public class BuildImageProcessor extends AbstractProcessor {
                   if (buildToolRunner.isValidService(imageWithTag.serviceName())) {
                     return true;
                   }
-                  log.error("Invalid service name: {}", imageWithTag.serviceName());
+                  log.error("Service does not exist: {}", imageWithTag.serviceName());
                   return false;
                 })
             .collect(
                 groupingBy(
-                    ImageWithTag::serviceName,
-                    toMap(ImageWithTag::tag, ImageWithTag::enforce, Boolean::logicalOr)))
-            .entrySet()
-            .stream()
-            .map(this::getBuildableImageWithTag)
-            .filter(Objects::nonNull)
-            .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+                    ImageWithTag::serviceName, mapping(ImageWithTag::tag, toUnmodifiableSet())));
 
-    final var imagesThatMustBeCreatedNew =
-        imagesWithTagsToBeCreated.entrySet().stream()
-            .filter(serviceNameAndTags -> serviceNameAndTags.getValue().getKey())
-            .map(
-                serviceNameAndTags ->
-                    Map.entry(
-                        serviceNameAndTags.getKey(), serviceNameAndTags.getValue().getValue()))
-            .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-    if (!imagesThatMustBeCreatedNew.isEmpty()) {
-      final var newImageNames = imagesThatMustBeCreatedNew.keySet();
-      log.info("Creating new images for: {}", newImageNames);
+    if (!imagesWithTagsToBeCreated.isEmpty()) {
       final var newImagesWithTag =
-          newImageNames.stream()
-              .map(this::createImage)
+          imagesWithTagsToBeCreated.entrySet().stream()
+              .map(imageAndTags -> createImage(imageAndTags.getKey(), imageAndTags.getValue()))
               .filter(Optional::isPresent)
               .map(Optional::get)
-              .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+              .collect(Collectors.toUnmodifiableSet());
 
       // log images that could not be created
-      imagesThatMustBeCreatedNew.keySet().stream()
-          .filter(Predicate.not(newImagesWithTag::containsKey))
+      imagesWithTagsToBeCreated.keySet().stream()
+          .filter(Predicate.not(newImagesWithTag::contains))
           .forEach(
               image ->
                   log.info(
                       "Could not create image: {}, with tags: {}",
                       image,
-                      imagesThatMustBeCreatedNew.get(image)));
-
-      // Re-load image list to have data for newly created images
-      loadDockerImages();
-
-      // Creating tags for newly created images
-      newImagesWithTag.forEach(
-          (imageName, sourceTag) ->
-              imagesThatMustBeCreatedNew
-                  .get(imageName)
-                  .forEach(targetTag -> buildImageWithTag(imageName, sourceTag, targetTag)));
-
-      // Cleaning up intermediate images and tags
-      newImagesWithTag.entrySet().stream()
-          .filter(imageAndTag -> {
-            // delete those temporary image and tags that were not requested in first place
-            final String newlyCreatedImageName = imageAndTag.getKey();
-            final String newlyCreatedImageTag = imageAndTag.getValue();
-            final Set<String> allRequestedTags = imagesWithTagsToBeCreated
-                .get(newlyCreatedImageName).getValue();
-            return !allRequestedTags.contains(newlyCreatedImageTag);
-          })
-          .forEach(imageAndTag ->
-              dockerRunner.deleteImageAndTag(imageAndTag.getKey(), imageAndTag.getValue()));
+                      imagesWithTagsToBeCreated.get(image)));
     }
-
-    // Creating tags for images that already exist
-    imagesWithTagsToBeCreated.entrySet().stream()
-        .filter(Predicate.not(imageAndTags -> imageAndTags.getValue().getKey()))
-        .map(
-            serviceNameAndTags ->
-                Map.entry(serviceNameAndTags.getKey(), serviceNameAndTags.getValue().getValue()))
-        .forEach(
-            imageAndTags -> {
-              final String serviceName = imageAndTags.getKey();
-              final String existingTag = dockerImages.get(serviceName).getValue().iterator().next();
-              imageAndTags
-                  .getValue()
-                  .forEach(targetTag -> buildImageWithTag(serviceName, existingTag, targetTag));
-            });
 
     log.info("Total time to setup images: {}ms", System.currentTimeMillis() - startTime);
     /*    roundEnv.getElementsAnnotatedWith(BuildImage.class).stream()
@@ -167,11 +111,22 @@ public class BuildImageProcessor extends AbstractProcessor {
     return true;
   }
 
-  private Optional<Map.Entry<String, String>> createImage(final String serviceName) {
+  private Optional<String> createImage(final String serviceName, final Set<String> tags) {
     // Try to create spring boot application image using build pack (if boot version supports it)
     final var springBootOciImage = buildToolRunner.createSpringBootImage(serviceName);
     if (springBootOciImage.isPresent()) {
-      return springBootOciImage;
+      final String sourceTag = springBootOciImage.get().getValue();
+      final boolean isSourceTaPreExisting = dockerImages.get(serviceName).values().stream()
+          .flatMap(Set::stream).anyMatch(tag -> tag.equals(sourceTag));
+      // Re-load image list to have data for newly created images
+      loadDockerImages();
+      // Creating requested tags
+      tags.forEach(targetTag -> buildImageWithTag(serviceName, sourceTag, targetTag));
+      // Cleaning up source tag that if it was not request or did not exist before
+      if (!isSourceTaPreExisting) {
+        dockerRunner.deleteImageAndTag(serviceName, sourceTag);
+      }
+      return Optional.of(serviceName);
     }
 
     // Try to create spring boot fat jar and then manually create docker image from it
@@ -181,17 +136,19 @@ public class BuildImageProcessor extends AbstractProcessor {
             .map(
                 entry ->
                     DockerfileUtil.createDockerFileFromTemplate(entry.getKey(), entry.getValue()))
-            .map(dockerFile -> dockerRunner.createNewImage(serviceName, dockerFile));
-    if (springBootImageFromJarNameAndTag.isEmpty()) {
-      return Optional.empty();
+            .map(dockerFile -> dockerRunner.createNewImage(serviceName, tags, dockerFile));
+    if (springBootImageFromJarNameAndTag.isPresent()) {
+      return Optional.of(serviceName);
     }
 
-    return springBootImageFromJarNameAndTag;
+    return Optional.empty();
   }
 
   private void buildImageWithTag(
       final String imageName, final String sourceTag, final String targetTag) {
-    final String id = dockerImages.get(imageName).getKey();
+    final String id = dockerImages.get(imageName).entrySet().stream()
+        .filter(idAndTags -> idAndTags.getValue().contains(sourceTag))
+        .map(Map.Entry::getKey).findFirst().orElseThrow();
     final String repoTag = imageName + ":" + sourceTag;
 
     log.info("""
@@ -230,57 +187,12 @@ public class BuildImageProcessor extends AbstractProcessor {
 
   private Stream<ImageWithTag> createTagEntryPerService(final BuildImage annotation) {
     final String tag = annotation.tag().trim();
-    final boolean enforce = annotation.enforce();
     final var services = annotation.services();
     return Arrays.stream(services)
         .filter(Predicate.not(String::isBlank))
         .map(String::trim)
-        .map(serviceName -> new ImageWithTag(serviceName, tag, enforce));
-  }
-
-  /*
-   * For an image, if even one tag is marked as enforced, then a new image will be created, and
-   * all tags for this image that are processed in this round will be created. If any of
-   * the to be created tag already exists for that image, then it will be overwritten.
-   * - Image Name
-   *   - Is new image to be created
-   *   - Set of tags to be created for new or existing image
-   */
-  private Map.Entry<String, Map.Entry<Boolean, Set<String>>> getBuildableImageWithTag(
-      final Map.Entry<String, Map<String, Boolean>> serviceToTags) {
-    final String serviceName = serviceToTags.getKey();
-    final var tagsAndRestriction = serviceToTags.getValue();
-
-    // For an image even if one tag is enforced, or if image does not exist,
-    // then creating new image and tags
-    final var isAnyTagEnforced =
-        tagsAndRestriction.entrySet().stream().anyMatch(Map.Entry::getValue);
-    if (isAnyTagEnforced || !dockerImages.containsKey(serviceName)) {
-      final var allTags =
-          tagsAndRestriction.keySet().stream().collect(Collectors.toUnmodifiableSet());
-
-      log.info("Create new image: {}, with tags: {}", serviceName, allTags);
-      return Map.entry(serviceName, Map.entry(true, allTags));
-    }
-
-    // If new image creation is not enforced and fiw of image name and tag combination
-    // already exist then create tags of existing image that are not already created
-    final var tagsOfExistingImage =
-        dockerImages.getOrDefault(serviceName, Map.entry("", Collections.emptySet())).getValue();
-    log.info("Found existing tags for image {}: {}", serviceName, tagsOfExistingImage);
-
-    final var newTagsToBeCreatedOfExistingImage =
-        tagsAndRestriction.keySet().stream()
-            .filter(Predicate.not(tagsOfExistingImage::contains))
-            .collect(Collectors.toUnmodifiableSet());
-    log.info("Create new tags for image: {}: {}", serviceName, newTagsToBeCreatedOfExistingImage);
-
-    if (newTagsToBeCreatedOfExistingImage.isEmpty()) {
-      log.info("No need to create new image with name: {}", serviceName);
-      return null;
-    }
-
-    return Map.entry(serviceName, Map.entry(false, newTagsToBeCreatedOfExistingImage));
+        .map(String::toLowerCase)
+        .map(serviceName -> new ImageWithTag(serviceName, tag));
   }
 
   private String getAbsolutePathOfAnnotatedClass(final Element classOrInterfaceType) {
@@ -292,7 +204,7 @@ public class BuildImageProcessor extends AbstractProcessor {
         .getPath();
   }
 
-  private static final record ImageWithTag(String serviceName, String tag, boolean enforce) {}
+  private static final record ImageWithTag(String serviceName, String tag) {}
 
   /*      Path root = FileSystems.getDefault().getPath("").toAbsolutePath();
   Path filePath = Paths.get(root.toString(),"src", "main", "resources", "SpringBootAppTest");

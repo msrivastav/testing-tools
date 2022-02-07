@@ -116,7 +116,7 @@ public class GradleRunner implements BuildToolRunner {
       final String projectName, final String gradleTask) {
 
     if (!isTaskConfiguredForProject(projectName, gradleTask)) {
-      log.error("Task: {}, not configured for project: {}", gradleTask, projectName);
+      log.warn("Task: {}, not configured for project: {}", gradleTask, projectName);
       return Optional.empty();
     }
 
