@@ -43,7 +43,7 @@ public class DockerRunner {
           .listImagesCmd()
           .exec()
           .stream()
-          .filter(image -> image.getRepoTags() != null || image.getRepoTags().length == 0)
+          .filter(image -> image.getRepoTags() != null && image.getRepoTags().length != 0)
           .flatMap(image -> {
             final var repoTags = image.getRepoTags();
 

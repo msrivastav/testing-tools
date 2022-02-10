@@ -1,11 +1,12 @@
 package me.msri.buildtool;
 
 import java.util.stream.Collectors;
-
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 import me.msri.buildtool.exception.UnresolvedBuildToolException;
+import me.msri.buildtool.gradle.GradleClientProvider;
 import me.msri.buildtool.gradle.GradleRunner;
+import me.msri.buildtool.gradle.GradleSetupInformationRepository;
 import me.msri.buildtool.maven.MavenRunner;
 import me.msri.buildtool.maven.MavenWrapperRunner;
 import me.msri.console.ConsoleCommandExecutor;
@@ -27,7 +28,10 @@ public class BuildToolRunnerProvider {
     final String successResult = result.getSuccessResultStream().collect(Collectors.joining(" "));
 
     if (successResult.contains("gradlew") || successResult.contains("build.gradle")) {
-      return new GradleRunner(projectBasePath);
+      final var gradleClientProvider = GradleClientProvider.getInstance();
+      final var repository = new GradleSetupInformationRepository(gradleClientProvider);
+      repository.initialise(projectBasePath);
+      return new GradleRunner(gradleClientProvider, repository);
     }
 
     if (successResult.contains("mvnw")) {

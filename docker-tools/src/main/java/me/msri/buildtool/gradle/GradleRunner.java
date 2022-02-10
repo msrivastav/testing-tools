@@ -1,35 +1,33 @@
 package me.msri.buildtool.gradle;
 
-import java.util.Collections;
-import java.util.HashMap;
+import static me.msri.buildtool.gradle.GradleRunnerUtil.executeTaskAndProcessError;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.msri.buildtool.BuildToolInformationRepository;
 import me.msri.buildtool.BuildToolRunner;
-import me.msri.buildtool.exception.BuildToolRunnerException;
-import org.gradle.tooling.model.GradleProject;
 
 @Slf4j
+@RequiredArgsConstructor
 public class GradleRunner implements BuildToolRunner {
 
   private final GradleClientProvider gradleClientProvider;
-  private final Map<String, ProjectPathAndTasks> projectToTasks;
-
-  public GradleRunner(final String projectBasePath) {
-    gradleClientProvider = GradleClientProvider.newInstance();
-    projectToTasks = getAllProjectAndTasks(projectBasePath);
-  }
+  private final BuildToolInformationRepository repository;
 
   @Override
   public boolean isValidService(String serviceName) {
-    return projectToTasks.containsKey(serviceName.toLowerCase());
+    return repository.isProjectConfigured(serviceName);
   }
 
   @Override
   public Optional<Map.Entry<String, String>> createSpringBootImage(final String projectName) {
     final String bootBuildImage = "bootBuildImage";
-    return executeTaskAndProcessError(projectName, bootBuildImage).map(Map.Entry::getKey).stream()
+    return executeTaskAndProcessError(gradleClientProvider, repository, projectName, bootBuildImage)
+        .map(Map.Entry::getKey)
+        .stream()
         .flatMap(String::lines)
         .filter(line -> line.contains("Successfully built image"))
         .map(line -> line.split("'"))
@@ -43,7 +41,8 @@ public class GradleRunner implements BuildToolRunner {
   public Optional<Map.Entry<String, String>> createSpringBootJar(String projectName) {
     // create jar
     final String bootJarTaskName = "bootJar";
-    var jarCreationResult = executeTaskAndProcessError(projectName, bootJarTaskName);
+    var jarCreationResult =
+        executeTaskAndProcessError(gradleClientProvider, repository, projectName, bootJarTaskName);
     if (jarCreationResult.isEmpty()) {
       return jarCreationResult;
     }
@@ -61,7 +60,9 @@ public class GradleRunner implements BuildToolRunner {
 
     // obtain spring boot fat jar path and name
     final String propertiesTaskName = "properties";
-    final var propertyReadResult = executeTaskAndProcessError(projectName, propertiesTaskName);
+    final var propertyReadResult =
+        executeTaskAndProcessError(
+            gradleClientProvider, repository, projectName, propertiesTaskName);
     if (propertyReadResult.isEmpty()) {
       return propertyReadResult;
     }
@@ -101,43 +102,5 @@ public class GradleRunner implements BuildToolRunner {
             .concat(".jar");
 
     return Optional.of(Map.entry(fullBuildDirPath, jarFileName));
-  }
-
-  private Map<String, ProjectPathAndTasks> getAllProjectAndTasks(final String projectBasePath) {
-    final Map<String, ProjectPathAndTasks> prjToTsks = new HashMap<>();
-    try (final var projConn = gradleClientProvider.getConnectionForProject(projectBasePath)) {
-      final var project = projConn.getModel(GradleProject.class);
-      GradleRunnerUtil.addProjectAndSubProjectsToMap(prjToTsks, project);
-    }
-    return prjToTsks.isEmpty() ? Collections.emptyMap() : prjToTsks;
-  }
-
-  private Optional<Map.Entry<String, String>> executeTaskAndProcessError(
-      final String projectName, final String gradleTask) {
-
-    if (!isTaskConfiguredForProject(projectName, gradleTask)) {
-      log.warn("Task: {}, not configured for project: {}", gradleTask, projectName);
-      return Optional.empty();
-    }
-
-    final String projectPath = getPathAndTasks(projectName).projectPath();
-    final var result = GradleRunnerUtil.executeTask(gradleClientProvider, projectPath, gradleTask);
-
-    return Optional.of(result);
-  }
-
-  private boolean isTaskConfiguredForProject(final String projectName, final String gradleTask) {
-    final var pathAndTasks = getPathAndTasks(projectName);
-    return pathAndTasks.tasks().contains(gradleTask);
-  }
-
-  private ProjectPathAndTasks getPathAndTasks(final String projectName) {
-    final var pathAndTasks = projectToTasks.get(projectName.toLowerCase());
-
-    if (pathAndTasks == null) {
-      throw new BuildToolRunnerException(projectName + " not configured as gradle project.");
-    }
-
-    return pathAndTasks;
   }
 }
